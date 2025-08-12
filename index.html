@@ -20,7 +20,7 @@
   .toggle{border:1px solid var(--border);background:var(--panel);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
 
   .wrap{max-width:1200px;margin:0 auto;padding:16px}
-  .grid{display:grid;grid-template-columns:1.15fr .7fr 1.15fr;gap:14px}
+  .grid{display:grid;grid-template-columns:1.15fr .8fr 1.25fr;gap:14px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px}
   h2{margin:0 0 8px 0;font-size:18px}
   label{font-weight:600;display:block;margin:10px 0 4px}
@@ -43,6 +43,11 @@
   .over{background:rgba(255,107,107,.15);color:var(--bad);border:1px solid rgba(255,107,107,.35)}
   .bar{height:10px;border-radius:6px;background:#1b2437;border:1px solid var(--border);overflow:hidden}
   .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));width:0%}
+
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{border:1px solid var(--border);padding:8px;text-align:left}
+  th{background:rgba(255,255,255,.03)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 
   /* Footer + CTA */
   .teaser{margin:16px 0;border:1px dashed var(--border);border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(255,255,255,.02)}
@@ -67,11 +72,10 @@
       <h2>Inputs</h2>
       <label for="hardware">Hardware</label>
       <select id="hardware" aria-label="Hardware">
-        <option>CPU-only</option>
-        <option>RTX 3090 (24GB)</option>
-        <option>A100 40GB</option>
-        <option>A100 80GB</option>
+        <option>RTX 5090 (est. 32GB)</option>
+        <option>RTX 6000 Ada (48GB)</option>
         <option>H100 80GB</option>
+        <option>H200 141GB</option>
       </select>
 
       <div class="row">
@@ -104,8 +108,8 @@
         </div>
       </div>
 
-      <label for="concurrency">Concurrent sessions</label>
-      <input id="concurrency" type="number" min="1" step="1" value="6" aria-label="Concurrent sessions"/>
+      <label for="concurrency">Concurrent sessions (requested)</label>
+      <input id="concurrency" type="number" min="1" step="1" value="16" aria-label="Concurrent sessions"/>
 
       <div aria-label="Guardrails" style="margin-top:8px">
         <strong>Guardrails</strong>
@@ -130,7 +134,7 @@
         <button data-preset="echelon">ÉCHELON — Retail</button>
         <button data-preset="verdict">Verdict — Legal</button>
       </div>
-      <p class="muted" style="margin-top:10px">Use presets as starting points; tweak inputs to match your hardware and workload.</p>
+      <p class="muted" style="margin-top:10px">Presets optimize for <strong>concurrency</strong>. The scheduler will queue overflow to protect hardware.</p>
     </div>
 
     <!-- Outputs -->
@@ -152,7 +156,7 @@
 
       <div class="tiles" style="margin-top:10px">
         <div class="tile" aria-label="Tokens per second">
-          <div class="muted">Tokens/sec</div>
+          <div class="muted">Tokens/sec (effective)</div>
           <div class="big" id="tps">—</div>
         </div>
         <div class="tile" aria-label="Max safe concurrency">
@@ -169,10 +173,18 @@
         </div>
       </div>
 
-      <div class="tile" style="margin-top:10px" aria-label="Guardrail posture">
-        <div class="muted">Guardrail posture</div>
-        <div id="guardPosture" class="big">—</div>
+      <div class="tile" style="margin-top:10px" aria-label="Queue wait">
+        <div class="muted">Estimated queue wait (p50)</div>
+        <div class="big" id="qwait">—</div>
       </div>
+
+      <h2 style="margin-top:14px">Scenario Comparison (hardware × model)</h2>
+      <table aria-label="Scenario comparison table">
+        <thead>
+          <tr><th>Hardware</th><th>7B</th><th>13B</th><th>20B</th></tr>
+        </thead>
+        <tbody id="compareBody"></tbody>
+      </table>
     </div>
   </section>
 
@@ -193,17 +205,15 @@
 <script>
 // ======= Heuristics (simple & fast) ======= //
 const HW = {
-  'CPU-only': { vram: 0, idx: 1 },
-  'RTX 3090 (24GB)': { vram: 24, idx: 10 },
-  'A100 40GB': { vram: 40, idx: 20 },
-  'A100 80GB': { vram: 80, idx: 25 },
-  'H100 80GB': { vram: 80, idx: 30 }
+  'RTX 5090 (est. 32GB)': { vram: 32, idx: 18 },
+  'RTX 6000 Ada (48GB)': { vram: 48, idx: 20 },
+  'H100 80GB': { vram: 80, idx: 30 },
+  'H200 141GB': { vram: 141, idx: 36 }
 };
 const PREC_BYTES = { 'Q4': 0.5, 'Q5': 0.7, 'FP16': 2.0 }; // bytes/param (approx)
 const QUANT_SPEED = { 'Q4': 1.30, 'Q5': 1.15, 'FP16': 1.0 };
 const MODELS_B = { '7B': 7, '13B': 13, '20B': 20 };
 
-// ======= DOM ======= //
 const el = id => document.getElementById(id);
 const $hardware=el('hardware'), $model=el('model'), $quant=el('quant');
 const $context=el('context'), $batch=el('batch'), $conc=el('concurrency');
@@ -213,106 +223,126 @@ const vramLabel=document.getElementById('vramLabel');
 const vramBar=document.getElementById('vramBar');
 const headroom=document.getElementById('headroom');
 const tpsEl=document.getElementById('tps'), p50El=document.getElementById('p50'), p95El=document.getElementById('p95'), safeConcEl=document.getElementById('safeConc');
-const exportBtn=document.getElementById('export');
+const qwaitEl=document.getElementById('qwait');
 
 function clamp(n,min,max){ return Math.min(max,Math.max(min,n)); }
 
-function calc(){
-  const hw = HW[$hardware.value];
-  const B = MODELS_B[$model.value];
-  const bytes = PREC_BYTES[$quant.value];
-  const ctx = Math.max(512, parseInt($context.value||0));
-  const batch = Math.max(1, parseInt($batch.value||1));
-  const conc = Math.max(1, parseInt($conc.value||1));
-
-  // Weights memory ~ params * bytes
+function estimate(hardware, B, quant, ctx, batch, conc, rag, pii, block){
+  const hw = HW[hardware];
+  const bytes = PREC_BYTES[quant];
+  // Weights memory ~ params * bytes (GB)
   const weightsGB = (B * bytes);
-  // KV cache (very rough): scales with context, conc, bytes, size
+  // KV cache (approx): scales with context, conc, bytes, size
   const kvGB = ctx * conc * bytes * B * 0.00002; // tuned for sensible numbers
-  // Runtime overhead + guardrails
   const runtimeGB = 2 + (conc*0.1);
-  const guardGB = ($rag.checked?1.0:0) + ($pii.checked?0.5:0) + ($block.checked?0.2:0);
+  const guardGB = (rag?1.0:0) + (pii?0.5:0) + (block?0.2:0);
   const totalGB = weightsGB + kvGB + runtimeGB + guardGB;
 
   const cap = hw.vram; // GB
   const usedPct = cap>0? clamp((totalGB/cap)*100,0,100):100;
-  vramBar.style.width = usedPct + '%';
-  vramLabel.textContent = `${totalGB.toFixed(1)} GB / ${cap} GB`;
-  const head = Math.max(0, cap - totalGB); headroom.textContent = head.toFixed(1) + ' GB';
-
-  // Badge
-  let badgeClass='safe', badgeText='Safe';
-  if(cap===0){ badgeClass='over'; badgeText='CPU path (no VRAM)'; }
-  else if(totalGB>cap){ badgeClass='over'; badgeText='Overcommit'; }
-  else if(totalGB>cap*0.9){ badgeClass='border'; badgeText='Borderline'; }
-  else { badgeClass='safe'; badgeText='Safe'; }
-  fitBadge.className = `badge ${badgeClass}`; fitBadge.textContent = badgeText;
+  const head = Math.max(0, cap - totalGB);
 
   // Throughput (tokens/sec)
-  const base = hw.idx * 15; // baseline
+  const base = hw.idx * 15; // baseline index
   const sizeFactor = 7 / B; // bigger models slower
-  const quantFactor = QUANT_SPEED[$quant.value];
-  const batchFactor = 1 + 0.22 * (batch-1); // mild boost with batch
-  let tps = base * sizeFactor * quantFactor * batchFactor;
-  if(cap===0) tps *= 0.15; // CPU-only slowdown
+  const quantFactor = QUANT_SPEED[quant];
+  const batchFactor = 1 + 0.22 * (batch-1);
+  let tps = base * sizeFactor * quantFactor * batchFactor; // aggregate throughput
   tps = Math.max(1, tps);
 
   // Safe concurrency from memory budget
-  const perSessionKV = ctx * bytes * B * 0.00002 + 0.05; // KV + small buffer
+  const perSessionKV = ctx * bytes * B * 0.00002 + 0.05; // KV + buffer
   let memForSessions = Math.max(0, cap - (weightsGB + guardGB + 1.5));
-  let safeConc = cap===0? Math.max(1, Math.floor(conc/2)) : Math.max(1, Math.floor(memForSessions / perSessionKV));
+  let safeConc = Math.max(1, Math.floor(memForSessions / perSessionKV));
 
-  // Per-request effective TPS given concurrency pressure
-  const pressure = conc/safeConc; // >1 means contention
+  // Effective TPS under contention
+  const pressure = conc/safeConc; // >1 means queueing
   const effTps = tps / Math.max(1, pressure);
-  const p50 = (1000 / effTps) + 30; // ms
+  const p50 = (1000 / effTps) + 30; // ms; simple
   const p95 = p50 * 1.8;
 
-  // Render numbers
-  tpsEl.textContent = effTps.toFixed(0);
-  p50El.textContent = `${p50.toFixed(0)} ms`;
-  p95El.textContent = `${p95.toFixed(0)} ms`;
-  safeConcEl.textContent = safeConc.toString();
+  // Queue wait: use p50 service time and oversub ratio
+  const tokensPerReq = Math.max(256, Math.round(ctx*0.25));
+  const serviceMs = (tokensPerReq / effTps) * 1000; // per request
+  const over = Math.max(0, conc - safeConc);
+  const qwaitMs = over>0 ? (over/safeConc) * serviceMs : 0;
 
-  // Guardrail posture
-  const on = [$rag.checked,$pii.checked,$block.checked];
-  const posture = on.every(Boolean)? '✅ Strong' : (on.some(Boolean)? '⚠️ Partial' : '⚠️ None');
-  document.getElementById('guardPosture').textContent = posture;
+  let fitClass='safe', fitText='Safe';
+  if(totalGB>cap){ fitClass='over'; fitText='Overcommit'; }
+  else if(totalGB>cap*0.9){ fitClass='border'; fitText='Borderline'; }
 
-  // Keep the state cached for export
-  window.__llm_state = { hardware:$hardware.value, model:$model.value, quant:$quant.value, context:ctx, batch, concurrency:conc, guardrails:{RAG:$rag.checked, PII_Redaction:$pii.checked, PromptBlocklist:$block.checked}, estimates:{vram_total_gb: +totalGB.toFixed(2), vram_capacity_gb: cap, tokens_per_sec: +effTps.toFixed(0), p50_ms:+p50.toFixed(0), p95_ms:+p95.toFixed(0), safe_concurrency:safeConc, fit:badgeText} };
+  return {totalGB, cap, usedPct, head, tps:effTps, p50, p95, safeConc, qwaitMs, fitClass, fitText};
 }
 
-// Inputs → calc (fast, <50ms)
+function render(){
+  const hw=$hardware.value, B=MODELS_B[$model.value], q=$quant.value, ctx=+($context.value||4096), batch=+( $batch.value||8 ), conc=+($conc.value||1);
+  const rag=$rag.checked, pii=$pii.checked, block=$block.checked;
+  const r=estimate(hw,B,q,ctx,batch,conc,rag,pii,block);
+
+  // VRAM
+  vramBar.style.width = r.usedPct + '%';
+  vramLabel.textContent = `${r.totalGB.toFixed(1)} GB / ${r.cap} GB`;
+  headroom.textContent = r.head.toFixed(1) + ' GB';
+
+  // Badge
+  fitBadge.className = `badge ${r.fitClass}`; fitBadge.textContent = r.fitText;
+
+  // Numbers
+  document.getElementById('tps').textContent = r.tps.toFixed(0);
+  document.getElementById('p50').textContent = `${r.p50.toFixed(0)} ms`;
+  document.getElementById('p95').textContent = `${r.p95.toFixed(0)} ms`;
+  document.getElementById('safeConc').textContent = r.safeConc.toString();
+  qwaitEl.textContent = (r.qwaitMs>0? `${r.qwaitMs.toFixed(0)} ms` : '0 ms');
+
+  // Comparison table (hardware × model with current settings for quant/context/batch/conc)
+  const tbody=document.getElementById('compareBody'); tbody.innerHTML='';
+  const hwNames=Object.keys(HW); const modelNames=Object.keys(MODELS_B);
+  for(const h of hwNames){
+    const tr=document.createElement('tr');
+    const th=document.createElement('td'); th.textContent=h; th.className='mono'; tr.appendChild(th);
+    for(const m of modelNames){
+      const rr=estimate(h, MODELS_B[m], q, ctx, batch, conc, rag, pii, block);
+      const td=document.createElement('td');
+      td.innerHTML = `<span class="mono">SC ${rr.safeConc}</span> · <span class="muted">Q ${rr.qwaitMs>0? rr.qwaitMs.toFixed(0)+'ms':'0ms'}</span>`;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  // cache for export
+  window.__llm_state = { hardware:hw, model:$model.value, quant:q, context:ctx, batch, concurrency:conc, guardrails:{RAG:rag,PII_Redaction:pii,PromptBlocklist:block}, estimates:{ vram_total_gb:+r.totalGB.toFixed(2), vram_capacity_gb:r.cap, tokens_per_sec:+r.tps.toFixed(0), p50_ms:+r.p50.toFixed(0), p95_ms:+r.p95.toFixed(0), safe_concurrency:r.safeConc, queue_wait_p50_ms:+r.qwaitMs.toFixed(0), fit:r.fitText }, comparison_table_generated:true };
+}
+
+// Inputs → render (fast, <50ms)
 ['change','input','keyup'].forEach(ev=>{
   document.addEventListener(ev, e=>{
-    if(e.target && (e.target.id||'').match(/hardware|model|quant|context|batch|concurrency|rag|pii|block/)) calc();
+    if(e.target && (e.target.id||'').match(/hardware|model|quant|context|batch|concurrency|rag|pii|block/)) render();
   })
 });
 
-// Presets
+// Presets emphasize concurrency
 const applyPreset = (p)=>{
   const pmap = {
-    finex: { hardware:'A100 80GB', model:'13B', quant:'Q5', context:4096, batch:8, concurrency:6, rag:true, pii:true, block:true },
-    echelon:{ hardware:'RTX 3090 (24GB)', model:'7B', quant:'Q4', context:2048, batch:16, concurrency:10, rag:true, pii:true, block:true },
-    verdict:{ hardware:'H100 80GB', model:'20B', quant:'FP16', context:8192, batch:4, concurrency:3, rag:true, pii:true, block:true }
+    finex:   { hardware:'RTX 6000 Ada (48GB)', model:'13B', quant:'Q5', context:4096, batch:8,  concurrency:40, rag:true, pii:true, block:true },
+    echelon: { hardware:'RTX 5090 (est. 32GB)', model:'7B',  quant:'Q4', context:3072, batch:16, concurrency:60, rag:true, pii:true, block:true },
+    verdict: { hardware:'H100 80GB',           model:'20B', quant:'FP16',context:8192, batch:4,  concurrency:20, rag:true, pii:true, block:true }
   }[p];
   if(!pmap) return;
   $hardware.value=pmap.hardware; $model.value=pmap.model; $quant.value=pmap.quant;
   $context.value=pmap.context; $batch.value=pmap.batch; $conc.value=pmap.concurrency;
-  $rag.checked=pmap.rag; $pii.checked=pmap.pii; $block.checked=pmap.block; calc();
+  $rag.checked=pmap.rag; $pii.checked=pmap.pii; $block.checked=pmap.block; render();
 };
 
 document.querySelectorAll('[data-preset]').forEach(b=> b.addEventListener('click', ()=> applyPreset(b.dataset.preset)) );
 
-document.getElementById('reset').addEventListener('click',()=>{ $hardware.selectedIndex=1; $model.value='13B'; $quant.value='Q5'; $context.value=4096; $batch.value=8; $conc.value=6; $rag.checked=$pii.checked=$block.checked=true; calc(); });
+document.getElementById('reset').addEventListener('click',()=>{ $hardware.selectedIndex=0; $model.value='13B'; $quant.value='Q5'; $context.value=4096; $batch.value=8; $conc.value=32; $rag.checked=$pii.checked=$block.checked=true; render(); });
 
 // Export config
 function exportConfig(){
   const data = window.__llm_state || {}; const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='llm_config.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
-exportBtn.addEventListener('click', exportConfig);
+document.getElementById('export').addEventListener('click', exportConfig);
 document.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ exportConfig(); }});
 
 // Theme
@@ -320,7 +350,7 @@ const themeBtn=document.getElementById('theme');
 themeBtn.addEventListener('click',()=>{ document.documentElement.classList.toggle('light'); });
 
 // first render
-applyPreset('finex');
+applyPreset('echelon');
 </script>
 </body>
 </html>
