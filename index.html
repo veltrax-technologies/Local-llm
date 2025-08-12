@@ -196,7 +196,7 @@
   function recommendTier(chatGpus, fraudGpus, chatUsers, fraudHour){
     const total = chatGpus + fraudGpus;
     if(total <= 2 && chatUsers <= 500 && fraudHour <= 75000){
-      return { tier:'Tier 1 — Demo/Small', gpus:'2× RTX 4090 (24GB) — or — 1× RTX 6000 Ada (48GB) + 1× 4090', cost:'$7k–$12k', why:'Low concurrency and moderate fraud throughput; dual consumer cards or a single 48GB pro card is sufficient.' };
+      return { tier:'Tier 1 — Small', gpus:'2× RTX 4090 (24GB) — or — 1× RTX 6000 Ada (48GB) + 1× 4090', cost:'$7k–$12k', why:'Low concurrency and moderate fraud throughput; dual consumer cards or a single 48GB pro card is sufficient.' };
     }
     if(total <= 2 && chatUsers <= 1200 && fraudHour <= 250000){
       return { tier:'Tier 2 — Mid‑Size', gpus:'2× RTX 6000 Ada (48GB)', cost:'$18k–$26k', why:'Higher concurrency and larger batches. 48GB VRAM per GPU gives headroom for bigger contexts and MoE.' };
