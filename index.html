@@ -3,354 +3,226 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Veltrax — Local LLM Deployment Simulator</title>
+<title>Veltrax GPU Capacity & Queue Time Calculator</title>
 <style>
+  /* ─────────────────────────────────────────────
+     Veltrax dark palette
+     ───────────────────────────────────────────── */
   :root{
-    --bg:#0d1117; --surface:#0f1421; --panel:#121a2a; --text:#e6ecf3; --muted:#9aa7b6; --border:#223047; --accent:#6f42c1; --accent2:#7aa3ff; --good:#2ecc71; --warn:#ffb454; --bad:#ff6b6b;
+    --bg:#0F1220;           /* background */
+    --text:#E6E7EB;         /* primary text */
+    --muted:#A9B1C3;        /* secondary text */
+    --panel:#121832;        /* card background */
+    --border:#22304F;       /* borders */
+    --accent:#6F42C1;       /* purple */
+    --primary:#0066FF;      /* action blue */
+    --good:#20C997;         /* green badge */
+    --warn:#FFB454;         /* yellow badge */
+    --bad:#FF6B6B;          /* red badge */
   }
-  .light:root{ --bg:#f7f9fc; --surface:#ffffff; --panel:#ffffff; --text:#1b2430; --muted:#5a6b83; --border:#d9e2ef; --accent:#6f42c1; --accent2:#4a7dff; --good:#1fa971; --warn:#e39b2e; --bad:#e05656; }
   *{box-sizing:border-box}
   html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial,sans-serif}
-  a{color:var(--accent2);text-decoration:none}
-  header{position:sticky;top:0;z-index:20;background:linear-gradient(to bottom,rgba(2,6,23,.7),rgba(2,6,23,.2)),var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;padding:12px 16px}
-  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2))}
-  .title{font-weight:700}
-  .spacer{flex:1}
-  .toggle{border:1px solid var(--border);background:var(--panel);padding:8px 12px;border-radius:10px;color:var(--text);cursor:pointer}
+  h1{margin:0 0 8px 0;font-size:24px}
+  p{margin:6px 0}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
 
-  .wrap{max-width:1200px;margin:0 auto;padding:16px}
-  .grid{display:grid;grid-template-columns:1.15fr .8fr 1.25fr;gap:14px}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px}
-  h2{margin:0 0 8px 0;font-size:18px}
-  label{font-weight:600;display:block;margin:10px 0 4px}
-  select,input[type=number]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text)}
-  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .switch{display:inline-flex;align-items:center;gap:8px;margin:6px 8px 0 0}
-  .switch input{width:18px;height:18px}
-  .preset{display:flex;flex-direction:column;gap:10px}
-  .preset button,.btn{border:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,0));padding:10px 12px;border-radius:10px;color:var(--text);font-weight:700;cursor:pointer;width:100%;text-align:left}
-  .btn.inline{width:auto}
+  /* Layout */
+  .grid{display:grid;grid-template-columns:1fr;gap:16px}
+  @media (min-width:1024px){ .grid{grid-template-columns:1fr 1fr} }
 
-  /* Outputs */
-  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
-  .tile{border:1px solid var(--border);border-radius:12px;padding:12px;background:var(--surface)}
-  .big{font-size:22px;font-weight:800}
-  .muted{color:var(--muted)}
-  .badge{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:700}
-  .safe{background:rgba(46,204,113,.15);color:var(--good);border:1px solid rgba(46,204,113,.35)}
-  .border{background:rgba(255,180,84,.15);color:var(--warn);border:1px solid rgba(255,180,84,.35)}
-  .over{background:rgba(255,107,107,.15);color:var(--bad);border:1px solid rgba(255,107,107,.35)}
-  .bar{height:10px;border-radius:6px;background:#1b2437;border:1px solid var(--border);overflow:hidden}
-  .bar>span{display:block;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));width:0%}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .subtle{color:var(--muted)}
 
-  table{width:100%;border-collapse:collapse;margin-top:12px}
-  th,td{border:1px solid var(--border);padding:8px;text-align:left}
-  th{background:rgba(255,255,255,.03)}
-  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  /* Inputs */
+  .field{display:grid;gap:6px;margin-bottom:12px}
+  label{font-weight:700}
+  input[type="number"]{appearance:textfield}
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button{appearance:none;margin:0}
+  .input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0F1530;color:var(--text)}
+  .input:focus{outline:2px solid var(--primary);outline-offset:2px}
+  .helper{color:#ff8080;font-size:12px;min-height:14px}
 
-  /* Footer + CTA */
-  .teaser{margin:16px 0;border:1px dashed var(--border);border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(255,255,255,.02)}
-  .founders{margin:14px 0;border:2px solid var(--accent);background:linear-gradient(180deg,rgba(111,66,193,.10),rgba(111,66,193,.02));border-radius:14px;padding:14px}
-  footer{color:var(--muted);border-top:1px solid var(--border);padding:14px;margin-top:16px}
+  .btn{border:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0));padding:10px 14px;border-radius:10px;color:var(--text);cursor:pointer;font-weight:700}
+  .btn.primary{background:linear-gradient(180deg,rgba(0,102,255,.25),rgba(0,102,255,.08));border-color:#1d4ed8}
+  .btn:hover{filter:brightness(1.05)}
 
-  @media (max-width: 980px){ .grid{grid-template-columns:1fr} .tiles{grid-template-columns:1fr} }
+  /* Results */
+  .results{display:grid;grid-template-columns:1fr;gap:12px}
+  @media (min-width:700px){ .results{grid-template-columns:repeat(2,1fr)} }
+  @media (min-width:1024px){ .results{grid-template-columns:repeat(3,1fr)} }
+
+  .metric{background:#0F1633;border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
+  .metric h3{margin:0 0 2px 0;font-size:14px;font-weight:700;color:#C9D2E6}
+  .value{font-size:26px;font-weight:800;letter-spacing:.3px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+  .badge{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:800;border:1px solid rgba(255,255,255,.15)}
+  .green{background:rgba(32,201,151,.18);color:#9CF0D5;border-color:rgba(32,201,151,.45)}
+  .yellow{background:rgba(255,180,84,.2);color:#FFE1AF;border-color:rgba(255,180,84,.45)}
+  .red{background:rgba(255,107,107,.2);color:#FFC2C2;border-color:rgba(255,107,107,.45)}
+
+  /* Tooltip "i" */
+  .info{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid var(--border);font-weight:900;font-size:12px;color:#D7DBE6;position:relative}
+  .info[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;transform:translateX(-50%);bottom:130%;width:max-content;max-width:260px;background:#0b1226;color:#dfe8ff;border:1px solid #1f2b44;padding:8px 10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+
+  footer{margin-top:14px;color:var(--muted)}
 </style>
 </head>
 <body>
-<header>
-  <div class="logo" aria-hidden="true"></div>
-  <div class="title">Veltrax — Local LLM Deployment Simulator</div>
-  <div class="spacer"></div>
-  <button id="theme" class="toggle" aria-label="Toggle theme">Toggle theme</button>
-</header>
+  <main class="wrap">
+    <section class="card" aria-label="Intro">
+      <h1>Veltrax GPU Capacity & Queue Time Calculator</h1>
+      <p class="subtle">Plan GPUs for chat assistants (VIA) and fraud/loan inference. Runs 100% in the browser — no backend. Change inputs, hit <em>Calculate</em>, and see capacity, utilization, and queue estimates.</p>
+    </section>
 
-<main class="wrap">
-  <section class="grid" aria-label="3-column layout">
-    <!-- Inputs -->
-    <div class="card" aria-label="Inputs">
-      <h2>Inputs</h2>
-      <label for="hardware">Hardware</label>
-      <select id="hardware" aria-label="Hardware">
-        <option>RTX 5090 (est. 32GB)</option>
-        <option>RTX 6000 Ada (48GB)</option>
-        <option>H100 80GB</option>
-        <option>H200 141GB</option>
-      </select>
-
-      <div class="row">
-        <div>
-          <label for="model">Model size</label>
-          <select id="model" aria-label="Model size">
-            <option>7B</option>
-            <option>13B</option>
-            <option>20B</option>
-          </select>
+    <section class="grid" aria-label="Inputs and Results">
+      <div class="card" aria-label="Inputs">
+        <h2 style="margin:0 0 10px 0">Inputs</h2>
+        <div class="field">
+          <label for="ccu">Concurrent Chatbot Users</label>
+          <input id="ccu" class="input" type="number" inputmode="numeric" min="0" step="1" value="120" aria-label="Concurrent Chatbot Users"/>
+          <div id="ccuHelp" class="helper"></div>
         </div>
-        <div>
-          <label for="quant">Quantization</label>
-          <select id="quant" aria-label="Quantization">
-            <option>Q4</option>
-            <option>Q5</option>
-            <option>FP16</option>
-          </select>
+        <div class="field">
+          <label for="tpc">Average Tokens per Chat</label>
+          <input id="tpc" class="input" type="number" inputmode="numeric" min="1" step="1" value="350" aria-label="Average Tokens per Chat"/>
+          <div id="tpcHelp" class="helper"></div>
         </div>
+        <div class="field">
+          <label for="ftph">Fraud/Loan Transactions per Hour</label>
+          <input id="ftph" class="input" type="number" inputmode="numeric" min="0" step="1" value="15000" aria-label="Fraud or Loan Transactions per Hour"/>
+          <div id="ftphHelp" class="helper"></div>
+        </div>
+        <button id="calc" class="btn primary" aria-label="Calculate capacity">Calculate Capacity</button>
       </div>
 
-      <div class="row">
-        <div>
-          <label for="context">Max context tokens</label>
-          <input id="context" type="number" min="512" step="256" value="4096" aria-label="Max context tokens"/>
+      <div class="card" aria-label="Outputs">
+        <h2 style="margin:0 0 10px 0">Outputs</h2>
+        <div class="results">
+          <div class="metric" aria-live="polite">
+            <h3>Chatbot GPUs Required</h3>
+            <div class="row"><div id="gpuChat" class="value">–</div><span id="utilChatBadge" class="badge">–</span></div>
+          </div>
+          <div class="metric" aria-live="polite">
+            <h3>Fraud/Loan GPUs Required</h3>
+            <div class="row"><div id="gpuFraud" class="value">–</div><span id="utilFraudBadge" class="badge">–</span></div>
+          </div>
+          <div class="metric">
+            <h3>Total GPUs Required</h3>
+            <div id="gpuTotal" class="value">–</div>
+          </div>
+          <div class="metric">
+            <h3>Estimated Chatbot Queue (minutes) <span class="info" data-tip="Queue times are conservative estimates using a deterministic service model; real systems may batch and preempt to reduce delays.">i</span></h3>
+            <div id="queueChat" class="value">0</div>
+          </div>
+          <div class="metric">
+            <h3>Estimated Fraud/Loan Queue (minutes) <span class="info" data-tip="Deterministic estimate based on soft utilization limit and per‑GPU hourly throughput.">i</span></h3>
+            <div id="queueFraud" class="value">0</div>
+          </div>
+          <div class="metric">
+            <h3>Rates</h3>
+            <div class="subtle" id="ratesText">–</div>
+          </div>
         </div>
-        <div>
-          <label for="batch">Batch size</label>
-          <input id="batch" type="number" min="1" step="1" value="8" aria-label="Batch size"/>
-        </div>
+        <p class="subtle" style="margin-top:12px">Estimates assume <strong>Mistral‑class 7B</strong> for chat and <strong>Mixtral‑class MoE</strong> for fraud/loan. Values are configurable in the constants above.</p>
       </div>
+    </section>
 
-      <label for="concurrency">Concurrent sessions (requested)</label>
-      <input id="concurrency" type="number" min="1" step="1" value="16" aria-label="Concurrent sessions"/>
-
-      <div aria-label="Guardrails" style="margin-top:8px">
-        <strong>Guardrails</strong>
-        <div>
-          <label class="switch"><input type="checkbox" id="rag" checked aria-label="Enable RAG"/> RAG</label>
-          <label class="switch"><input type="checkbox" id="pii" checked aria-label="Enable PII redaction"/> PII redaction</label>
-          <label class="switch"><input type="checkbox" id="block" checked aria-label="Enable prompt blocklist"/> Prompt blocklist</label>
-        </div>
-      </div>
-
-      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn inline" id="export" aria-label="Export config as JSON">Export llm_config.json (↵)</button>
-        <button class="btn inline" id="reset">Reset</button>
-      </div>
-    </div>
-
-    <!-- Presets -->
-    <div class="card" aria-label="Presets">
-      <h2>Presets</h2>
-      <div class="preset">
-        <button data-preset="finex">Finex — Banking</button>
-        <button data-preset="echelon">ÉCHELON — Retail</button>
-        <button data-preset="verdict">Verdict — Legal</button>
-      </div>
-      <p class="muted" style="margin-top:10px">Presets optimize for <strong>concurrency</strong>. The scheduler will queue overflow to protect hardware.</p>
-    </div>
-
-    <!-- Outputs -->
-    <div class="card" aria-label="Outputs">
-      <h2>Live Estimates</h2>
-      <div style="display:flex;align-items:center;gap:8px;margin:6px 0 12px">
-        <span class="muted">Fit status:</span>
-        <span id="fitBadge" class="badge">—</span>
-      </div>
-
-      <div class="tile" aria-label="VRAM usage">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong>VRAM</strong>
-          <span class="muted" id="vramLabel">—</span>
-        </div>
-        <div class="bar" aria-hidden="true"><span id="vramBar"></span></div>
-        <div class="muted" style="margin-top:6px">Headroom: <span id="headroom">—</span></div>
-      </div>
-
-      <div class="tiles" style="margin-top:10px">
-        <div class="tile" aria-label="Tokens per second">
-          <div class="muted">Tokens/sec (effective)</div>
-          <div class="big" id="tps">—</div>
-        </div>
-        <div class="tile" aria-label="Max safe concurrency">
-          <div class="muted">Max safe concurrency</div>
-          <div class="big" id="safeConc">—</div>
-        </div>
-        <div class="tile" aria-label="p50 latency">
-          <div class="muted">p50 latency</div>
-          <div class="big" id="p50">—</div>
-        </div>
-        <div class="tile" aria-label="p95 latency">
-          <div class="muted">p95 latency</div>
-          <div class="big" id="p95">—</div>
-        </div>
-      </div>
-
-      <div class="tile" style="margin-top:10px" aria-label="Queue wait">
-        <div class="muted">Estimated queue wait (p50)</div>
-        <div class="big" id="qwait">—</div>
-      </div>
-
-      <h2 style="margin-top:14px">Scenario Comparison (hardware × model)</h2>
-      <table aria-label="Scenario comparison table">
-        <thead>
-          <tr><th>Hardware</th><th>7B</th><th>13B</th><th>20B</th></tr>
-        </thead>
-        <tbody id="compareBody"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- CTA / Next -->
-  <div class="founders" role="note" aria-label="Founders deal">
-    <strong>Founders deal:</strong> 30% upfront with milestone deliveries. First 5 get <strong>15% off</strong> + <strong>1 year support</strong>.
-  </div>
-  <div class="teaser" role="region" aria-label="Next page">
-    <div><strong>Next:</strong> Security & Compliance Map — see threats mapped to controls and evidence.</div>
-    <a class="btn" href="https://veltrax-technologies.github.io/Security-Compliance/">Open Security Map</a>
-  </div>
-
-  <footer>
-    <small>Estimates are conservative.</small>
-  </footer>
-</main>
+    <footer>
+      <small>© Veltrax — on‑prem, local‑first AI. This calculator is intentionally simple for fast sizing; production deployments include batching, request shaping, and backpressure.</small>
+    </footer>
+  </main>
 
 <script>
-// ======= Heuristics (simple & fast) ======= //
-const HW = {
-  'RTX 5090 (est. 32GB)': { vram: 32, idx: 18 },
-  'RTX 6000 Ada (48GB)': { vram: 48, idx: 20 },
-  'H100 80GB': { vram: 80, idx: 30 },
-  'H200 141GB': { vram: 141, idx: 36 }
-};
-const PREC_BYTES = { 'Q4': 0.5, 'Q5': 0.7, 'FP16': 2.0 }; // bytes/param (approx)
-const QUANT_SPEED = { 'Q4': 1.30, 'Q5': 1.15, 'FP16': 1.0 };
-const MODELS_B = { '7B': 7, '13B': 13, '20B': 20 };
+  // ───────────────────────────────────────────────────────────
+  // Constants — edit these to tune estimates
+  // ───────────────────────────────────────────────────────────
+  const CHAT_SESSIONS_PER_GPU = 180;           // conservative concurrency ceiling per chatbot GPU
+  const CHAT_TOKENS_PER_SEC_PER_GPU = 150;     // Mistral 7B Q4 on 96GB class GPU
+  const FRAUD_TX_PER_HOUR_PER_GPU = 25000;     // Mixtral 8x7B Q4 batch inference
 
-const el = id => document.getElementById(id);
-const $hardware=el('hardware'), $model=el('model'), $quant=el('quant');
-const $context=el('context'), $batch=el('batch'), $conc=el('concurrency');
-const $rag=el('rag'), $pii=el('pii'), $block=el('block');
-const fitBadge=document.getElementById('fitBadge');
-const vramLabel=document.getElementById('vramLabel');
-const vramBar=document.getElementById('vramBar');
-const headroom=document.getElementById('headroom');
-const tpsEl=document.getElementById('tps'), p50El=document.getElementById('p50'), p95El=document.getElementById('p95'), safeConcEl=document.getElementById('safeConc');
-const qwaitEl=document.getElementById('qwait');
+  // Queue thresholds (when to start queueing instead of adding GPUs)
+  const CHAT_UTIL_SOFT_LIMIT = 0.80;           // if >80% of session cap, start estimating queue time
+  const FRAUD_UTIL_SOFT_LIMIT = 0.85;
 
-function clamp(n,min,max){ return Math.min(max,Math.max(min,n)); }
-
-function estimate(hardware, B, quant, ctx, batch, conc, rag, pii, block){
-  const hw = HW[hardware];
-  const bytes = PREC_BYTES[quant];
-  // Weights memory ~ params * bytes (GB)
-  const weightsGB = (B * bytes);
-  // KV cache (approx): scales with context, conc, bytes, size
-  const kvGB = ctx * conc * bytes * B * 0.00002; // tuned for sensible numbers
-  const runtimeGB = 2 + (conc*0.1);
-  const guardGB = (rag?1.0:0) + (pii?0.5:0) + (block?0.2:0);
-  const totalGB = weightsGB + kvGB + runtimeGB + guardGB;
-
-  const cap = hw.vram; // GB
-  const usedPct = cap>0? clamp((totalGB/cap)*100,0,100):100;
-  const head = Math.max(0, cap - totalGB);
-
-  // Throughput (tokens/sec)
-  const base = hw.idx * 15; // baseline index
-  const sizeFactor = 7 / B; // bigger models slower
-  const quantFactor = QUANT_SPEED[quant];
-  const batchFactor = 1 + 0.22 * (batch-1);
-  let tps = base * sizeFactor * quantFactor * batchFactor; // aggregate throughput
-  tps = Math.max(1, tps);
-
-  // Safe concurrency from memory budget
-  const perSessionKV = ctx * bytes * B * 0.00002 + 0.05; // KV + buffer
-  let memForSessions = Math.max(0, cap - (weightsGB + guardGB + 1.5));
-  let safeConc = Math.max(1, Math.floor(memForSessions / perSessionKV));
-
-  // Effective TPS under contention
-  const pressure = conc/safeConc; // >1 means queueing
-  const effTps = tps / Math.max(1, pressure);
-  const p50 = (1000 / effTps) + 30; // ms; simple
-  const p95 = p50 * 1.8;
-
-  // Queue wait: use p50 service time and oversub ratio
-  const tokensPerReq = Math.max(256, Math.round(ctx*0.25));
-  const serviceMs = (tokensPerReq / effTps) * 1000; // per request
-  const over = Math.max(0, conc - safeConc);
-  const qwaitMs = over>0 ? (over/safeConc) * serviceMs : 0;
-
-  let fitClass='safe', fitText='Safe';
-  if(totalGB>cap){ fitClass='over'; fitText='Overcommit'; }
-  else if(totalGB>cap*0.9){ fitClass='border'; fitText='Borderline'; }
-
-  return {totalGB, cap, usedPct, head, tps:effTps, p50, p95, safeConc, qwaitMs, fitClass, fitText};
-}
-
-function render(){
-  const hw=$hardware.value, B=MODELS_B[$model.value], q=$quant.value, ctx=+($context.value||4096), batch=+( $batch.value||8 ), conc=+($conc.value||1);
-  const rag=$rag.checked, pii=$pii.checked, block=$block.checked;
-  const r=estimate(hw,B,q,ctx,batch,conc,rag,pii,block);
-
-  // VRAM
-  vramBar.style.width = r.usedPct + '%';
-  vramLabel.textContent = `${r.totalGB.toFixed(1)} GB / ${r.cap} GB`;
-  headroom.textContent = r.head.toFixed(1) + ' GB';
-
-  // Badge
-  fitBadge.className = `badge ${r.fitClass}`; fitBadge.textContent = r.fitText;
-
-  // Numbers
-  document.getElementById('tps').textContent = r.tps.toFixed(0);
-  document.getElementById('p50').textContent = `${r.p50.toFixed(0)} ms`;
-  document.getElementById('p95').textContent = `${r.p95.toFixed(0)} ms`;
-  document.getElementById('safeConc').textContent = r.safeConc.toString();
-  qwaitEl.textContent = (r.qwaitMs>0? `${r.qwaitMs.toFixed(0)} ms` : '0 ms');
-
-  // Comparison table (hardware × model with current settings for quant/context/batch/conc)
-  const tbody=document.getElementById('compareBody'); tbody.innerHTML='';
-  const hwNames=Object.keys(HW); const modelNames=Object.keys(MODELS_B);
-  for(const h of hwNames){
-    const tr=document.createElement('tr');
-    const th=document.createElement('td'); th.textContent=h; th.className='mono'; tr.appendChild(th);
-    for(const m of modelNames){
-      const rr=estimate(h, MODELS_B[m], q, ctx, batch, conc, rag, pii, block);
-      const td=document.createElement('td');
-      td.innerHTML = `<span class="mono">SC ${rr.safeConc}</span> · <span class="muted">Q ${rr.qwaitMs>0? rr.qwaitMs.toFixed(0)+'ms':'0ms'}</span>`;
-      tr.appendChild(td);
+  // ───────────────────────────────────────────────────────────
+  // Utility
+  // ───────────────────────────────────────────────────────────
+  const $ = (id)=>document.getElementById(id);
+  function badge(el, util){
+    const pct = Math.round(util*100);
+    let cls='green', label=`${pct}% util`;
+    if(util>0.85) cls='red'; else if(util>0.70) cls='yellow';
+    el.className = `badge ${cls}`;
+    el.textContent = label;
+  }
+  function parseIntSafe(el, helpEl){
+    const v = Number(el.value);
+    if(!Number.isFinite(v) || v<0 || !Number.isInteger(v)){
+      helpEl.textContent = 'Enter a non‑negative whole number.';
+      el.setAttribute('aria-invalid','true');
+      return null;
     }
-    tbody.appendChild(tr);
+    helpEl.textContent = '';
+    el.removeAttribute('aria-invalid');
+    return v;
   }
 
-  // cache for export
-  window.__llm_state = { hardware:hw, model:$model.value, quant:q, context:ctx, batch, concurrency:conc, guardrails:{RAG:rag,PII_Redaction:pii,PromptBlocklist:block}, estimates:{ vram_total_gb:+r.totalGB.toFixed(2), vram_capacity_gb:r.cap, tokens_per_sec:+r.tps.toFixed(0), p50_ms:+r.p50.toFixed(0), p95_ms:+r.p95.toFixed(0), safe_concurrency:r.safeConc, queue_wait_p50_ms:+r.qwaitMs.toFixed(0), fit:r.fitText }, comparison_table_generated:true };
-}
+  // ───────────────────────────────────────────────────────────
+  // Core math — single calculate() as requested
+  // ───────────────────────────────────────────────────────────
+  function calculate(){
+    const ccu = parseIntSafe($('ccu'), $('ccuHelp'));
+    const tpc = parseIntSafe($('tpc'), $('tpcHelp'));
+    const ftph = parseIntSafe($('ftph'), $('ftphHelp'));
+    if(ccu===null || tpc===null || ftph===null) return;
 
-// Inputs → render (fast, <50ms)
-['change','input','keyup'].forEach(ev=>{
-  document.addEventListener(ev, e=>{
-    if(e.target && (e.target.id||'').match(/hardware|model|quant|context|batch|concurrency|rag|pii|block/)) render();
-  })
-});
+    // A) Chatbot sizing
+    const GPUs_chat = (ccu===0)? 0 : Math.ceil(ccu / CHAT_SESSIONS_PER_GPU);
+    const chat_seconds_per_session = (tpc<=0) ? 0 : (tpc / CHAT_TOKENS_PER_SEC_PER_GPU);
+    const service_rate_per_gpu = (chat_seconds_per_session===0) ? Infinity : (60 / chat_seconds_per_session); // chats/min/GPU
+    const service_rate_total = (GPUs_chat===0) ? 0 : GPUs_chat * service_rate_per_gpu; // chats/min
 
-// Presets emphasize concurrency
-const applyPreset = (p)=>{
-  const pmap = {
-    finex:   { hardware:'RTX 6000 Ada (48GB)', model:'13B', quant:'Q5', context:4096, batch:8,  concurrency:40, rag:true, pii:true, block:true },
-    echelon: { hardware:'RTX 5090 (est. 32GB)', model:'7B',  quant:'Q4', context:3072, batch:16, concurrency:60, rag:true, pii:true, block:true },
-    verdict: { hardware:'H100 80GB',           model:'20B', quant:'FP16',context:8192, batch:4,  concurrency:20, rag:true, pii:true, block:true }
-  }[p];
-  if(!pmap) return;
-  $hardware.value=pmap.hardware; $model.value=pmap.model; $quant.value=pmap.quant;
-  $context.value=pmap.context; $batch.value=pmap.batch; $conc.value=pmap.concurrency;
-  $rag.checked=pmap.rag; $pii.checked=pmap.pii; $block.checked=pmap.block; render();
-};
+    const session_cap_total = GPUs_chat * CHAT_SESSIONS_PER_GPU;
+    const util_sessions = (session_cap_total===0)? 0 : (ccu / session_cap_total);
 
-document.querySelectorAll('[data-preset]').forEach(b=> b.addEventListener('click', ()=> applyPreset(b.dataset.preset)) );
+    let wait_minutes_chat = 0;
+    if(GPUs_chat>0 && util_sessions>CHAT_UTIL_SOFT_LIMIT && Number.isFinite(service_rate_total) && service_rate_total>0){
+      const excess = ccu - (session_cap_total * CHAT_UTIL_SOFT_LIMIT);
+      wait_minutes_chat = Math.max(0, excess / service_rate_total);
+    }
 
-document.getElementById('reset').addEventListener('click',()=>{ $hardware.selectedIndex=0; $model.value='13B'; $quant.value='Q5'; $context.value=4096; $batch.value=8; $conc.value=32; $rag.checked=$pii.checked=$block.checked=true; render(); });
+    // B) Fraud/Loan sizing
+    const GPUs_fraud = (ftph===0)? 0 : Math.ceil(ftph / FRAUD_TX_PER_HOUR_PER_GPU);
+    const fraud_cap_total = GPUs_fraud * FRAUD_TX_PER_HOUR_PER_GPU; // tx/hour
+    const util_fraud = (fraud_cap_total===0)? 0 : (ftph / fraud_cap_total);
 
-// Export config
-function exportConfig(){
-  const data = window.__llm_state || {}; const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='llm_config.json'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 0);
-}
-document.getElementById('export').addEventListener('click', exportConfig);
-document.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ exportConfig(); }});
+    let wait_minutes_fraud = 0;
+    if(GPUs_fraud>0 && util_fraud>FRAUD_UTIL_SOFT_LIMIT){
+      const excess_tx = ftph - (fraud_cap_total * FRAUD_UTIL_SOFT_LIMIT);
+      wait_minutes_fraud = Math.max(0, 60 * (excess_tx / fraud_cap_total));
+    }
 
-// Theme
-const themeBtn=document.getElementById('theme');
-themeBtn.addEventListener('click',()=>{ document.documentElement.classList.toggle('light'); });
+    // Populate UI
+    $('gpuChat').textContent = GPUs_chat.toString();
+    $('gpuFraud').textContent = GPUs_fraud.toString();
+    $('gpuTotal').textContent = (GPUs_chat + GPUs_fraud).toString();
 
-// first render
-applyPreset('echelon');
+    $('queueChat').textContent = (Math.round(wait_minutes_chat*10)/10).toFixed(1);
+    $('queueFraud').textContent = (Math.round(wait_minutes_fraud*10)/10).toFixed(1);
+
+    badge($('utilChatBadge'), util_sessions);
+    badge($('utilFraudBadge'), util_fraud);
+
+    const rateTxt = (Number.isFinite(service_rate_per_gpu))
+      ? `Chat service rate ≈ ${service_rate_per_gpu.toFixed(1)} chats/min/GPU (tokens=${tpc}), total ≈ ${(Number.isFinite(service_rate_total)?service_rate_total.toFixed(1):'∞')} chats/min.`
+      : `Chat service rate ≈ ∞ (0 tokens).`;
+    $('ratesText').textContent = `${rateTxt} Fraud throughput ≈ ${FRAUD_TX_PER_HOUR_PER_GPU} tx/hour/GPU.`;
+  }
+
+  $('calc').addEventListener('click', calculate);
 </script>
 </body>
 </html>
