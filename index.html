@@ -67,6 +67,8 @@
   .info{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid var(--border);font-weight:900;font-size:12px;color:#D7DBE6;position:relative}
   .info[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:50%;transform:translateX(-50%);bottom:130%;width:max-content;max-width:260px;background:#0b1226;color:#dfe8ff;border:1px solid #1f2b44;padding:8px 10px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.35)}
 
+  .founders{margin-top:16px;border:2px solid var(--accent);background:linear-gradient(180deg,rgba(111,66,193,.12),rgba(111,66,193,.03));border-radius:14px;padding:14px}
+  .teaser{margin:16px 0;border:1px dashed var(--border);border-radius:12px;padding:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(255,255,255,.03)}
   footer{margin-top:14px;color:var(--muted)}
 </style>
 </head>
@@ -126,9 +128,17 @@
             <div class="subtle" id="ratesText">–</div>
           </div>
         </div>
-        <p class="subtle" style="margin-top:12px">Estimates assume <strong>Mistral‑class 7B</strong> for chat and <strong>Mixtral‑class MoE</strong> for fraud/loan. Values are configurable in the constants above.</p>
+        
       </div>
     </section>
+
+    <div class="founders" role="note" aria-label="Founders deal">
+      <strong>Founders deal:</strong> 30% upfront with milestone deliveries. First 5 get <strong>15% off</strong> + <strong>1 year support</strong>.
+    </div>
+    <div class="teaser" role="region" aria-label="Next step">
+      <div><strong>Next:</strong> Security & Compliance Map — see threats mapped to controls and evidence.</div>
+      <a class="btn" href="PASTE_NEXT_URL_HERE">Open Security Map</a>
+    </div>
 
     <footer>
       <small>© Veltrax — on‑prem, local‑first AI. This calculator is intentionally simple for fast sizing; production deployments include batching, request shaping, and backpressure.</small>
